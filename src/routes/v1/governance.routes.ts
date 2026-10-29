@@ -3,6 +3,7 @@ import { requireAuth } from "../../middleware/auth.middleware";
 import {
   approveGovernance,
   createGovernanceJob,
+  downloadGovernanceReport,
   getGovernanceAgents,
   getGovernanceAudit,
   getGovernanceDecision,
@@ -21,6 +22,7 @@ router.post("/jobs", createGovernanceJob);
 router.get("/jobs/:jobId", getGovernanceJob);
 router.get("/jobs/:jobId/findings", getGovernanceFindings);
 router.get("/jobs/:jobId/decision", getGovernanceDecision);
+router.get("/jobs/:jobId/report.pdf", downloadGovernanceReport);
 router.get("/agents", getGovernanceAgents);
 router.get("/policies", getGovernancePolicies);
 router.put("/policies/:id", updateGovernancePolicy);

@@ -8,8 +8,12 @@ import {
   FindingModel,
   GovernanceTaskModel,
   PolicyModel,
+  AgentModel,
 } from "../models/governance.model";
 import { RepoModel } from "../models/repo.model";
+import { FunctionModel } from "../models/function.model";
+import { FileModel } from "../models/file.model";
+import { SecurityFindingModel } from "../models/securityFinding.model";
 import { verifyChain } from "../governance/auditLogger";
 import { startGovernanceJob, approveGovernanceDecision } from "../orchestrator/coordinator";
 import { asyncHandler } from "../utils/asyncHandler";
@@ -22,6 +26,7 @@ import {
 } from "../validators/governance.validator";
 import { isGovernanceAdmin } from "../governance/access";
 import { enforce } from "../governance/pep";
+import { generateGovernancePDF } from "../services/governancePdf.service";
 
 const objectId = (id: string, label = "ID") => {
   if (!mongoose.Types.ObjectId.isValid(id)) throw new AppError(`Invalid ${label}.`, 400);
@@ -39,6 +44,62 @@ async function ownedJob(jobId: string, userId: string) {
   const repo = await RepoModel.findOne({ _id: job.repoId, owner_id: userId }).select("_id").lean();
   if (!repo) throw new AppError("Analysis job not found.", 404);
   return job;
+}
+
+async function addFindingLabels(findings: any[], repoId: mongoose.Types.ObjectId | string) {
+  const objectIdTargets = findings.flatMap((finding) => [finding.target, ...(finding.evidence || []).filter((item: any) => item.kind === "function").map((item: any) => item.ref)])
+    .filter((value) => typeof value === "string" && mongoose.Types.ObjectId.isValid(value));
+  const securityIds = findings.flatMap((finding) => (finding.evidence || []).filter((item: any) => item.kind === "security_finding").map((item: any) => item.ref))
+    .filter((value) => typeof value === "string" && mongoose.Types.ObjectId.isValid(value));
+  const [functions, securityFindings] = await Promise.all([
+    objectIdTargets.length
+      ? FunctionModel.find({ _id: { $in: objectIdTargets }, repo_id: repoId }).select("name file_id start_line end_line").lean()
+      : Promise.resolve([]),
+    securityIds.length
+      ? SecurityFindingModel.find({ _id: { $in: securityIds }, repo_id: repoId }).select("title file_path line_number").lean()
+      : Promise.resolve([]),
+  ]);
+  const fileIds = functions.map((fn: any) => fn.file_id);
+  const files = fileIds.length
+    ? await FileModel.find({ _id: { $in: fileIds }, repo_id: repoId }).select("path").lean()
+    : [];
+  const pathById = new Map(files.map((file: any) => [file._id.toString(), file.path]));
+  const functionById = new Map(functions.map((fn: any) => [fn._id.toString(), {
+    name: fn.name,
+    file: pathById.get(fn.file_id.toString()) || "source file",
+    line: fn.start_line,
+  }]));
+  const securityById = new Map(securityFindings.map((finding: any) => [finding._id.toString(), finding]));
+
+  return findings.map((finding) => {
+    const targetFunction = functionById.get(String(finding.target));
+    const evidence = (finding.evidence || []).map((item: any) => {
+      if (item.kind === "function") {
+        const fn = functionById.get(String(item.ref));
+        return { ...item, label: fn ? `${fn.name}() — ${fn.file}:${fn.line}` : `Function reference ${item.ref}` };
+      }
+      if (item.kind === "security_finding") {
+        const security = securityById.get(String(item.ref));
+        return { ...item, label: security
+          ? `${security.title}${security.file_path ? ` — ${security.file_path}${security.line_number ? `:${security.line_number}` : ""}` : ""}`
+          : `Security finding ${item.ref}` };
+      }
+      if (item.kind === "file") return { ...item, label: `File — ${item.ref}` };
+      if (item.kind === "edge") return { ...item, label: `Dependency edge — ${item.ref}` };
+      if (item.kind === "finding") return { ...item, label: `Related finding ${item.ref}` };
+      return { ...item, label: `${item.kind}: ${item.ref}` };
+    });
+    const targetLabel = targetFunction
+      ? `${targetFunction.name}() — ${targetFunction.file}:${targetFunction.line}`
+      : (typeof finding.target === "string" && mongoose.Types.ObjectId.isValid(finding.target)
+        ? "Repository target"
+        : finding.target || "Repository");
+    return {
+      ...finding,
+      targetLabel,
+      evidence,
+    };
+  });
 }
 
 export const createGovernanceJob = asyncHandler(async (req: Request, res: Response) => {
@@ -66,7 +127,7 @@ export const getGovernanceFindings = asyncHandler(async (req: Request, res: Resp
   if (typeof req.query.agent === "string") filter.agentId = req.query.agent;
   if (typeof req.query.category === "string") filter.category = req.query.category;
   const findings = await FindingModel.find(filter).sort({ createdAt: 1 }).lean();
-  return successResponse(res, findings);
+  return successResponse(res, await addFindingLabels(findings, job.repoId));
 });
 
 export const getGovernanceDecision = asyncHandler(async (req: Request, res: Response) => {
@@ -77,7 +138,8 @@ export const getGovernanceDecision = asyncHandler(async (req: Request, res: Resp
   }
   const ids = Array.from(new Set(decisions.flatMap((decision) => [...decision.findingIds, ...decision.dissentIds]).map(String)));
   const findings = await FindingModel.find({ _id: { $in: ids } }).lean();
-  const byId = new Map(findings.map((finding) => [finding._id.toString(), finding]));
+  const labeledFindings = await addFindingLabels(findings, job.repoId);
+  const byId = new Map(labeledFindings.map((finding) => [finding._id.toString(), finding]));
   return successResponse(res, {
     status: job.status,
     decisions: decisions.map((decision) => ({
@@ -85,6 +147,42 @@ export const getGovernanceDecision = asyncHandler(async (req: Request, res: Resp
       findings: decision.findingIds.map((id) => byId.get(id.toString())).filter(Boolean),
       dissent: decision.dissentIds.map((id) => byId.get(id.toString())).filter(Boolean),
     })),
+  });
+});
+
+export const downloadGovernanceReport = asyncHandler(async (req: Request, res: Response) => {
+  const jobId = routeParam(req.params.jobId, "job ID");
+  const job = await ownedJob(jobId, (req as any).auth.userId);
+  const [repo, tasks, findings, decisions, audit, violations, agents] = await Promise.all([
+    RepoModel.findById(job.repoId).select("repo_url").lean(),
+    GovernanceTaskModel.find({ jobId: job._id }).sort({ createdAt: 1 }).lean(),
+    FindingModel.find({ jobId: job._id }).sort({ createdAt: 1 }).lean(),
+    DecisionModel.find({ jobId: job._id }).sort({ category: 1, target: 1 }).lean(),
+    AuditLogModel.find({ jobId: job._id.toString() }).sort({ seq: 1 }).lean(),
+    AuditLogModel.find({ jobId: job._id.toString(), decision: { $in: ["DENY", "REDACT", "ESCALATE"] } }).sort({ seq: 1 }).lean(),
+    AgentModel.find({ status: "ACTIVE" }).select("agentId role trustWeight").lean(),
+  ]);
+  const labeledFindings = await addFindingLabels(findings, job.repoId);
+  const byId = new Map(labeledFindings.map((finding) => [finding._id.toString(), finding]));
+  const decisionRows = decisions.map((decision) => ({
+    ...decision,
+    findings: decision.findingIds.map((id) => byId.get(id.toString())).filter(Boolean),
+    dissent: decision.dissentIds.map((id) => byId.get(id.toString())).filter(Boolean),
+  })).map((decision: any) => ({
+    ...decision,
+    targetLabel: decision.findings[0]?.targetLabel || decision.dissent[0]?.targetLabel || (mongoose.Types.ObjectId.isValid(String(decision.target)) ? "Repository target" : decision.target || "Repository"),
+  }));
+  await generateGovernancePDF({
+    res,
+    repoName: repo?.repo_url?.replace(/\/$/, "").split("/").pop() || "Repository",
+    repoUrl: repo?.repo_url || "",
+    job,
+    tasks,
+    findings: labeledFindings,
+    decisions: decisionRows,
+    audit,
+    violations,
+    agents,
   });
 });
 
