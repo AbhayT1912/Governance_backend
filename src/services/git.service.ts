@@ -4,7 +4,7 @@ import { AppError } from "../utils/AppError";
 import { logger } from "../config/logger";
 import { ENV } from "../config/env";
 import { cleanupRepo } from "../utils/repoCleanup";
-import simpleGit from "simple-git";
+import { simpleGit } from "simple-git";
 
 export async function getRepositoryCommitSha(repoPath: string) {
   return (await simpleGit(repoPath).revparse(["HEAD"])).trim();

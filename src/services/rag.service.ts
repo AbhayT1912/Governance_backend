@@ -4,6 +4,7 @@ import { logger } from "../config/logger";
 const RAG_BASE_URL = process.env.RAG_SERVICE_URL || "http://localhost:8000";
 const RAG_INGEST_TIMEOUT = parseInt(process.env.RAG_INGEST_TIMEOUT || "180000"); // 3 minutes default
 const RAG_INGEST_RETRIES = parseInt(process.env.RAG_INGEST_RETRIES || "1");
+const RAG_SERVICE_TOKEN = process.env.RAG_SERVICE_TOKEN;
 
 /**
  * Retry logic for RAG ingestion (cold starts, timeouts)
@@ -54,7 +55,10 @@ export const ingestRepoToRAG = async (
         repoUrl,
         repo_url: repoUrl,
       },
-      { timeout: RAG_INGEST_TIMEOUT }
+      {
+        timeout: RAG_INGEST_TIMEOUT,
+        headers: RAG_SERVICE_TOKEN ? { Authorization: `Bearer ${RAG_SERVICE_TOKEN}` } : undefined,
+      }
     );
   });
 

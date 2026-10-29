@@ -44,7 +44,7 @@ const corsOptions: cors.CorsOptions = {
     });
     callback(new Error("Not allowed by CORS"));
   },
-  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Authorization", "Content-Type", "Accept"],
   credentials: true,
   maxAge: 86400 // 24 hours

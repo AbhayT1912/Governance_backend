@@ -14,9 +14,18 @@ const envSchema = z.object({
   CLERK_WEBHOOK_SECRET: z.string(),
   GOVERNANCE_ADMIN_USER_IDS: z.string().default(""),
   REDIS_URL: z.string().optional(), // Cloud deployments like Heroku
+  RAG_SERVICE_TOKEN: z.string().min(32).optional(),
   CORS_ORIGINS: z
     .string()
     .default("http://localhost:5173,https://repolens-sage.vercel.app"),
+}).superRefine((values, context) => {
+  if (values.NODE_ENV === "production" && !values.RAG_SERVICE_TOKEN) {
+    context.addIssue({
+      code: "custom",
+      path: ["RAG_SERVICE_TOKEN"],
+      message: "RAG_SERVICE_TOKEN is required in production.",
+    });
+  }
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -39,6 +48,7 @@ export const ENV = {
     .map((userId) => userId.trim())
     .filter(Boolean),
   REDIS_URL: parsed.data.REDIS_URL,
+  RAG_SERVICE_TOKEN: parsed.data.RAG_SERVICE_TOKEN,
   CORS_ORIGINS: parsed.data.CORS_ORIGINS.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),

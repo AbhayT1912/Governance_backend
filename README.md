@@ -290,11 +290,18 @@ MongoDB is used for flexible document storage.
 Create .env file:
 
 PORT=5000
-MONGO_URI=your_mongodb_uri
-REDIS_URL=your_redis_url
-CORS_ORIGINS=http://localhost:5173,https://repolens-sage.vercel.app
-RAG_SERVICE_URL=http://localhost:8000/ask
 NODE_ENV=development
+MONGO_URI=your_mongodb_uri
+CLERK_SECRET_KEY=your_clerk_secret_key
+CLERK_WEBHOOK_SECRET=your_clerk_webhook_secret
+REDIS_URL=your_redis_url
+CORS_ORIGINS=http://localhost:5173
+RAG_SERVICE_URL=http://localhost:8000
+RAG_SERVICE_TOKEN=use_the_same_random_token_of_at_least_32_characters_in_backend_and_rag
+GOVERNANCE_ADMIN_USER_IDS=clerk_user_id_1,clerk_user_id_2
+For production, set `NODE_ENV=production`, use the deployed RAG service's **base URL** (without `/ask`), and configure the same strong `RAG_SERVICE_TOKEN` on the backend and RAG service. `RAG_SERVICE_TOKEN` is required in production. Set `CORS_ORIGINS` to the exact frontend origin(s). Configure `MONGO_URI`, `CLERK_SECRET_KEY`, and `CLERK_WEBHOOK_SECRET` in the hosting provider's secret manager; use `REDIS_URL` for a managed Redis instance.
+
+The backend container uses Node 22, includes Git for repository cloning, builds TypeScript during image creation, runs as a non-root user, and exposes `/health`. Build it with `docker build -t repolens-backend .` from this directory. Supply production secrets through the hosting platform, not Docker build arguments.
 ▶️ Running Locally
 1️⃣ Install Dependencies
 npm install

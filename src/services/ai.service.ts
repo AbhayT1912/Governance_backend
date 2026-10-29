@@ -3,6 +3,7 @@ import axios, { AxiosError } from "axios";
 const RAG_BASE_URL = process.env.RAG_SERVICE_URL || "http://localhost:8000";
 const RAG_TIMEOUT = parseInt(process.env.RAG_TIMEOUT || "60000"); // 60s default, up from 10s
 const RAG_RETRIES = parseInt(process.env.RAG_RETRIES || "2");
+const RAG_SERVICE_TOKEN = process.env.RAG_SERVICE_TOKEN;
 
 export interface AskUsage {
   totalTokens?: number;
@@ -77,7 +78,10 @@ export const ingestToRAG = async (repoPath: string, repoId: string) => {
         repoPath,
         repoId,
       },
-      { timeout: RAG_TIMEOUT }
+      {
+        timeout: RAG_TIMEOUT,
+        headers: RAG_SERVICE_TOKEN ? { Authorization: `Bearer ${RAG_SERVICE_TOKEN}` } : undefined,
+      }
     );
     return response.data;
   });
@@ -99,10 +103,13 @@ export const askAIService = async (
       {
         timeout: RAG_TIMEOUT,
         signal,
-        headers: identity ? {
-          "x-repolens-agent-id": identity.agentId,
-          "x-repolens-job-id": identity.jobId,
-        } : undefined,
+        headers: {
+          ...(RAG_SERVICE_TOKEN ? { Authorization: `Bearer ${RAG_SERVICE_TOKEN}` } : {}),
+          ...(identity ? {
+            "x-repolens-agent-id": identity.agentId,
+            "x-repolens-job-id": identity.jobId,
+          } : {}),
+        },
       }
     );
 
@@ -149,10 +156,13 @@ export const indexGovernanceResults = async (
       { repoId, jobId, findings: findingBatch, decisions: decisionBatch, replace: batch === 0 },
       {
         timeout: RAG_TIMEOUT,
-        headers: identity ? {
-          "x-repolens-agent-id": identity.agentId,
-          "x-repolens-job-id": identity.jobId,
-        } : undefined,
+        headers: {
+          ...(RAG_SERVICE_TOKEN ? { Authorization: `Bearer ${RAG_SERVICE_TOKEN}` } : {}),
+          ...(identity ? {
+            "x-repolens-agent-id": identity.agentId,
+            "x-repolens-job-id": identity.jobId,
+          } : {}),
+        },
       },
     ));
     if (!response.data?.success) throw new Error("RAG service did not confirm governance indexing.");
