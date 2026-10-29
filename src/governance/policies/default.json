@@ -1,0 +1,131 @@
+[
+  {
+    "policyId": "POL-TOOL-001",
+    "version": 1,
+    "type": "tool_permission",
+    "description": "Agents may use only tools assigned to their registry role.",
+    "when": { "events": ["tool_call"] },
+    "effect": "DENY",
+    "message": "Tool is not permitted for this agent.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-DELEG-001",
+    "version": 1,
+    "type": "delegation",
+    "description": "Limit delegation depth and reject delegation cycles.",
+    "when": { "events": ["delegate"] },
+    "effect": "DENY",
+    "message": "Delegation depth or cycle policy was violated.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-DUP-001",
+    "version": 1,
+    "type": "duplicate_work",
+    "description": "Reuse completed tasks with the same repository and analysis fingerprint.",
+    "when": { "events": ["delegate"] },
+    "effect": "ALLOW",
+    "message": "Completed matching work may be reused.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-DATA-001",
+    "version": 1,
+    "type": "data_protection",
+    "description": "Redact credentials and private keys from agent output and messages.",
+    "when": { "events": ["output", "message"] },
+    "effect": "REDACT",
+    "message": "Sensitive data was redacted.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-EVID-001",
+    "version": 1,
+    "type": "evidence",
+    "description": "Reject findings without at least one source evidence reference.",
+    "when": { "events": ["output"] },
+    "effect": "DENY",
+    "message": "Finding requires at least one evidence reference.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-REVIEW-001",
+    "version": 1,
+    "type": "review",
+    "description": "Require Critic review for high and critical findings.",
+    "when": { "events": ["output"] },
+    "effect": "ESCALATE",
+    "message": "High-risk finding requires Critic review.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-BUDGET-001",
+    "version": 1,
+    "type": "budget",
+    "description": "Limit governed task token usage.",
+    "when": { "events": ["tool_call"] },
+    "conditions": [
+      { "field": "action", "op": "eq", "value": "ask_rag" },
+      { "field": "context.tokensUsed", "op": "gt", "value": 20000 }
+    ],
+    "effect": "DENY",
+    "message": "Agent token budget exceeded.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-BUDGET-LLM-001",
+    "version": 1,
+    "type": "budget",
+    "description": "Limit LLM calls per agent task.",
+    "when": { "events": ["tool_call"] },
+    "conditions": [
+      { "field": "action", "op": "eq", "value": "ask_rag" },
+      { "field": "context.llmCalls", "op": "gt", "value": 4 }
+    ],
+    "effect": "DENY",
+    "message": "Agent task LLM call budget exceeded.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-BUDGET-TIME-001",
+    "version": 1,
+    "type": "budget",
+    "description": "Limit wall-clock time for each agent task.",
+    "when": { "events": ["message"] },
+    "conditions": [{ "field": "context.durationMs", "op": "gt", "value": 120000 }],
+    "effect": "DENY",
+    "message": "Agent task exceeded its wall-clock budget.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-SCOPE-001",
+    "version": 1,
+    "type": "scope",
+    "description": "Prevent an agent from reading data outside its assigned repository and job.",
+    "when": { "events": ["message", "tool_call", "output"] },
+    "effect": "DENY",
+    "message": "Agent action is outside its assigned repository or job scope.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-INJECT-001",
+    "version": 1,
+    "type": "prompt_injection",
+    "description": "Treat repository text as untrusted and strip instruction-like content before prompting.",
+    "when": { "events": ["message", "tool_call"] },
+    "effect": "REDACT",
+    "message": "Instruction-like untrusted text was stripped.",
+    "enabled": true
+  },
+  {
+    "policyId": "POL-EXEC-001",
+    "version": 1,
+    "type": "static_analysis_only",
+    "description": "Never execute code from an analyzed repository.",
+    "when": { "events": ["tool_call"] },
+    "effect": "DENY",
+    "message": "Repository code execution is not permitted.",
+    "enabled": true
+  }
+]
